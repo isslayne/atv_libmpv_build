@@ -1,0 +1,21 @@
+From 5ba84fc6be2fa9004ab53d9548d37b5176017eed Mon Sep 17 00:00:00 2001
+From: isslayne <isslyne@gmail.com>
+Date: Sun, 22 May 2022 12:54:25 +0800
+Subject: [PATCH] fix: variable 'supp_size' set but not used
+ [-Werror,-Wunused-but-set-variable]
+
+---
+
+--- src/harfbuzz-2.6.4/src/hb-subset-cff1.cc
++++ src/harfbuzz-2.6.4/src/hb-subset-cff1.cc
+@@ -511,6 +511,7 @@ struct cff_subset_plan {
+ 	  subset_enc_supp_codes.push (pair);
+ 	}
+ 	supp_size += SuppEncoding::static_size * supp_codes.length;
++  printf("%d", supp_size);
+       }
+     }
+     supp_codes.fini ();
+-- 
+2.31.0
+
