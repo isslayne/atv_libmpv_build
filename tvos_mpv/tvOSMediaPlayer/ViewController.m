@@ -10,6 +10,7 @@
 
 #import "client.h"
 #import "opengl_cb.h"
+#include "render_gl.h"
 
 #import <AVKit/AVKit.h>
 
@@ -36,8 +37,9 @@ static void *get_proc_address(void *ctx, const char *name)
 static void glupdate(void *ctx);
 
 @interface MpvClientOGLView : GLKView
-    @property mpv_opengl_cb_context *mpvGL;
-    @end
+//    @property mpv_opengl_cb_context *mpvGL;
+    @property mpv_render_context *mpvGL;
+@end
 
 @implementation MpvClientOGLView {
     GLint defaultFBO;
@@ -82,12 +84,25 @@ static void glupdate(void *ctx);
             glGetIntegerv(GL_FRAMEBUFFER_BINDING, &defaultFBO);
         }
         
+        static GLint dims[] = { 0, 0, 0, 0 };
+        glGetIntegerv(GL_VIEWPORT, dims);
         if (self.mpvGL)
         {
-            mpv_opengl_cb_draw(self.mpvGL,
-                               defaultFBO,
-                               self.bounds.size.width * self.contentScaleFactor,
-                               -self.bounds.size.height * self.contentScaleFactor);
+//            mpv_opengl_cb_draw(self.mpvGL,
+//                               defaultFBO,
+//                               self.bounds.size.width * self.contentScaleFactor,
+//                               -self.bounds.size.height * self.contentScaleFactor);
+            mpv_render_param params[] = {
+                {MPV_RENDER_PARAM_OPENGL_FBO, &(mpv_opengl_fbo){
+                    .fbo = -1,
+                    .w = self.bounds.size.width,
+                    .h = self.bounds.size.height,
+                }},
+                {MPV_RENDER_PARAM_FLIP_Y, &(int){1}},
+                {0}
+            };
+            
+            mpv_render_context_render(self.mpvGL, params);
         }
     }
     
@@ -168,23 +183,42 @@ static void wakeup(void *context)
     check_error(mpv_set_option_string(mpv, "target-trc", "gamma1.8"));
 
     
-    mpv_opengl_cb_context *mpvGL = mpv_get_sub_api(mpv, MPV_SUB_API_OPENGL_CB);
-    if (!mpvGL) {
-        puts("libmpv does not have the opengl-cb sub-API.");
-        exit(1);
-    }
+//    mpv_opengl_cb_context *mpvGL = mpv_get_sub_api(mpv, MPV_SUB_API_OPENGL_CB);
+//    if (!mpvGL) {
+//        puts("libmpv does not have the opengl-cb sub-API.");
+//        exit(1);
+//    }
     
     [self.glView display];
     
     // pass the mpvGL context to our view
-    self.glView.mpvGL = mpvGL;
-    int r = mpv_opengl_cb_init_gl(mpvGL, NULL, get_proc_address, NULL);
+//    self.glView.mpvGL = mpvGL;
+//    int r = mpv_opengl_cb_init_gl(mpvGL, NULL, get_proc_address, NULL);
+    
+    mpv_render_param params[] = {
+            {MPV_RENDER_PARAM_API_TYPE, MPV_RENDER_API_TYPE_OPENGL},
+            {MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &(mpv_opengl_init_params){
+                .get_proc_address = get_proc_address,
+            }},
+            {0}
+        };
+    
+    mpv_render_context *mpvGL;
+    int r = mpv_render_context_create(&mpvGL, mpv, params);
+    
     if (r < 0) {
         puts("gl init has failed.");
         exit(1);
     }
-    mpv_opengl_cb_set_update_callback(mpvGL, glupdate, (__bridge void *)self.glView);
+    self.glView.mpvGL = mpvGL;
     
+//    mpv_opengl_cb_set_update_callback(mpvGL, glupdate, (__bridge void *)self.glView);
+    mpv_render_context_set_update_callback(mpvGL, glupdate, (__bridge void *)self.glView);
+    
+    mpv_set_property_string(mpv, "vo", "libmpv");
+    mpv_set_property_string(mpv, "keepaspect", "no");
+    mpv_set_property_string(mpv, "gpu-hwdec-interop", "auto");
+    mpv_request_log_messages(mpv, "warn");
     
     // Deal with MPV in the background.
     queue = dispatch_queue_create("mpv", DISPATCH_QUEUE_SERIAL);
@@ -193,7 +227,8 @@ static void wakeup(void *context)
         mpv_set_wakeup_callback(mpv, wakeup, (__bridge void *)self);
         // Load the indicated file
         
-        const char *cmd[] = {"loadfile", "http://uoctidrk.russtv.net/iptv/VHUP8HQL6ZA9C9/5000/index.m3u", NULL};
+//        const char *cmd[] = {"loadfile", "http://live.tvfix.org/hls/cctv4k.m3u8", NULL};
+        const char *cmd[] = {"loadfile", "http://live.tvfix.org/hls/cctv1hd.m3u8", NULL};
         //        NSURL *movieURL = [[NSBundle mainBundle] URLForResource:@"hevc-test-soccer" withExtension:@"mts"];
         //        const char *cmd[] = {"loadfile", [movieURL.absoluteString UTF8String], NULL};
         check_error(mpv_command(mpv, cmd));
@@ -208,8 +243,9 @@ static void wakeup(void *context)
     {
         switch (event->event_id) {
             case MPV_EVENT_SHUTDOWN: {
+                mpv_render_context_free(self.glView.mpvGL);
                 mpv_detach_destroy(mpv);
-                mpv_opengl_cb_uninit_gl(self.glView.mpvGL);
+//                mpv_opengl_cb_uninit_gl(self.glView.mpvGL);
                 mpv = NULL;
                 printf("event: shutdown\n");
                 break;
